@@ -1,0 +1,337 @@
+{
+  "entities": {
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Trusted database record for administrators who unlocked the Admin Panel with the secret passcode.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the administrator.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "accessCode": {
+          "type": "string",
+          "description": "Secret admin password verification token.",
+          "enum": ["hello"],
+          "minLength": 5,
+          "maxLength": 5
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when admin access was unlocked."
+        }
+      },
+      "required": ["uid", "accessCode", "createdAt"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Public contributor profile for a registered SARAS book archivist (contains no PII).",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Unique Firebase Auth UID matching document ID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Public display name of the contributor.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "phoneVerified": {
+          "type": "boolean",
+          "description": "Boolean flag indicating whether the contributor has verified their phone number via OTP."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was last updated."
+        }
+      },
+      "required": ["uid", "displayName", "phoneVerified", "createdAt", "updatedAt"]
+    },
+    "UserPrivateContact": {
+      "title": "UserPrivateContact",
+      "description": "Isolated owner-only PII record storing the user's OTP-verified phone number.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "phoneNumber": {
+          "type": "string",
+          "description": "E.164 or formatted phone number verified via OTP.",
+          "minLength": 7,
+          "maxLength": 20,
+          "pattern": "^\\+?[0-9\\s\\-()]+$"
+        },
+        "phoneVerified": {
+          "type": "boolean",
+          "description": "Must be true upon OTP verification."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when phone verification was recorded."
+        }
+      },
+      "required": ["uid", "phoneNumber", "phoneVerified", "updatedAt"]
+    },
+    "Book": {
+      "title": "Book",
+      "description": "An old book record containing 3-side photographs (front cover, spine, back cover), book title, book author, and contributor attribution.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "The title/name of the old book.",
+          "minLength": 1,
+          "maxLength": 150
+        },
+        "author": {
+          "type": "string",
+          "description": "The author name of the old book.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "frontPhoto": {
+          "type": "string",
+          "description": "Compressed image data URI for Side 1 (Front Cover).",
+          "minLength": 20,
+          "maxLength": 300000
+        },
+        "spinePhoto": {
+          "type": "string",
+          "description": "Compressed image data URI for Side 2 (Book Spine / Edge).",
+          "minLength": 20,
+          "maxLength": 300000
+        },
+        "backPhoto": {
+          "type": "string",
+          "description": "Compressed image data URI for Side 3 (Back Cover).",
+          "minLength": 20,
+          "maxLength": 300000
+        },
+        "conditionNote": {
+          "type": "string",
+          "description": "Optional brief condition or publication year note.",
+          "minLength": 0,
+          "maxLength": 300
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "UID of the user who photographed and added the book.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerName": {
+          "type": "string",
+          "description": "Display name of the person who added the book.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "visibility": {
+          "type": "string",
+          "description": "Catalog visibility scope for query enforcement.",
+          "enum": ["public"],
+          "minLength": 6,
+          "maxLength": 6
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the book was added."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the book was last updated."
+        }
+      },
+      "required": [
+        "title",
+        "author",
+        "frontPhoto",
+        "spinePhoto",
+        "backPhoto",
+        "conditionNote",
+        "ownerId",
+        "ownerName",
+        "visibility",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "BookOrder": {
+      "title": "BookOrder",
+      "description": "Order placed via Buy Now containing exact GPS/locality location, state, full Shiprocket delivery address, and sender phone number.",
+      "type": "object",
+      "properties": {
+        "bookId": {
+          "type": "string",
+          "description": "ID of the ordered book in /books/{bookId}.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "bookTitle": {
+          "type": "string",
+          "description": "Title of the ordered book.",
+          "minLength": 1,
+          "maxLength": 150
+        },
+        "bookAuthor": {
+          "type": "string",
+          "description": "Author of the ordered book.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "sellerName": {
+          "type": "string",
+          "description": "Name of the contributor who listed the book.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "buyerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the buyer.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "customerName": {
+          "type": "string",
+          "description": "Recipient full name for Shiprocket delivery.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "customerPhone": {
+          "type": "string",
+          "description": "Phone number from which the order was sent.",
+          "minLength": 7,
+          "maxLength": 20,
+          "pattern": "^\\+?[0-9\\s\\-()]+$"
+        },
+        "exactLocation": {
+          "type": "string",
+          "description": "Exact GPS coordinates and/or pinpointed locality string captured as step 1 of Buy Now.",
+          "minLength": 3,
+          "maxLength": 250
+        },
+        "fullAddress": {
+          "type": "string",
+          "description": "House/Flat number, building, street, and locality for Shiprocket.",
+          "minLength": 5,
+          "maxLength": 250
+        },
+        "landmark": {
+          "type": "string",
+          "description": "Optional nearby landmark for courier delivery.",
+          "minLength": 0,
+          "maxLength": 120
+        },
+        "city": {
+          "type": "string",
+          "description": "Delivery city or district.",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "state": {
+          "type": "string",
+          "description": "Delivery state or union territory for Shiprocket.",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "pincode": {
+          "type": "string",
+          "description": "Postal / PIN code for Shiprocket courier routing.",
+          "minLength": 4,
+          "maxLength": 12,
+          "pattern": "^[0-9A-Za-z\\s\\-]+$"
+        },
+        "status": {
+          "type": "string",
+          "description": "Order fulfillment status.",
+          "enum": ["pending", "ready_for_shiprocket", "dispatched", "delivered"],
+          "minLength": 7,
+          "maxLength": 20
+        },
+        "adminEmail": {
+          "type": "string",
+          "description": "Bootstrapped administrator email for secure admin list queries.",
+          "enum": ["brobecode1765@gmail.com"],
+          "minLength": 23,
+          "maxLength": 23
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when order was placed."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when order was last updated."
+        }
+      },
+      "required": [
+        "bookId",
+        "bookTitle",
+        "bookAuthor",
+        "sellerName",
+        "buyerId",
+        "customerName",
+        "customerPhone",
+        "exactLocation",
+        "fullAddress",
+        "landmark",
+        "city",
+        "state",
+        "pincode",
+        "status",
+        "adminEmail",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Stores trusted administrator records keyed by UID."
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Stores public non-PII contributor profiles keyed by Firebase Auth UID."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateContact" },
+      "description": "Isolated owner-only PII subcollection storing the contributor's OTP-verified phone number."
+    },
+    "/books/{bookId}": {
+      "schema": { "$ref": "#/entities/Book" },
+      "description": "Stores cataloged old books with 3-side photos, book name, author name, and contributor info."
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/BookOrder" },
+      "description": "Stores Buy Now book orders with exact location, state, phone number, and Shiprocket delivery details accessible only to the buyer and the administrator."
+    }
+  }
+}

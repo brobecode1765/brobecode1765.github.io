@@ -1,0 +1,6 @@
+{
+  "name": "SARAS — Old Book 3-Side Archive & Catalog",
+  "description": "Photograph and catalog vintage and pre-loved books from all three sides (front cover, spine, and back cover) with book title, author, and contributor records.",
+  "requestFramePermissions": ["camera", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

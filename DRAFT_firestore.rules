@@ -1,0 +1,412 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Pillar 4.1: Global Safety Net (Default-Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Phase 3: Hardened Global Helpers
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && (request.auth.token.email_verified == true || request.auth.token.phone_number is string);
+    }
+
+    // Bootstrapped Admin + Trusted Database Lookup (Never trusts unverified email)
+    function isBootstrappedAdminToken() {
+      return isSignedIn()
+        && request.auth.token.email_verified == true
+        && request.auth.token.email == 'brobecode1765@gmail.com';
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && (
+          exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+          || isBootstrappedAdminToken()
+        );
+    }
+
+    // Pillar 2: Validation Blueprint for AdminRecord (Requires secret accessCode "hello")
+    function isValidAdminRecord(data) {
+      return data.keys().hasAll(['uid', 'accessCode', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'accessCode', 'createdAt'])
+        && data.uid is string
+        && data.uid.size() >= 1
+        && data.uid.size() <= 128
+        && data.uid.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.uid == request.auth.uid
+        && data.accessCode is string
+        && data.accessCode.size() == 5
+        && data.accessCode == 'hello'
+        && data.createdAt is timestamp;
+    }
+
+    // Pillar 2: Validation Blueprint for UserProfile (Public Non-PII)
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'phoneVerified', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'phoneVerified', 'createdAt', 'updatedAt'])
+        && data.uid is string
+        && data.uid.size() >= 1
+        && data.uid.size() <= 128
+        && data.uid.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.uid == request.auth.uid
+        && data.displayName is string
+        && data.displayName.size() >= 1
+        && data.displayName.size() <= 80
+        && data.phoneVerified is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Pillar 2 & Pillar 6: Validation Blueprint for Isolated PII Phone Record
+    function isValidUserPrivateContact(data) {
+      return data.keys().hasAll(['uid', 'phoneNumber', 'phoneVerified', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'phoneNumber', 'phoneVerified', 'updatedAt'])
+        && data.uid is string
+        && data.uid.size() >= 1
+        && data.uid.size() <= 128
+        && data.uid.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.uid == request.auth.uid
+        && data.phoneNumber is string
+        && data.phoneNumber.size() >= 7
+        && data.phoneNumber.size() <= 20
+        && data.phoneNumber.matches('^\\+?[0-9\\s\\-()]+$')
+        && data.phoneVerified is bool
+        && data.phoneVerified == true
+        && data.updatedAt is timestamp;
+    }
+
+    // Pillar 2: Validation Blueprint for Book
+    function isValidBook(data) {
+      return data.keys().hasAll([
+          'title',
+          'author',
+          'frontPhoto',
+          'spinePhoto',
+          'backPhoto',
+          'conditionNote',
+          'ownerId',
+          'ownerName',
+          'visibility',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'title',
+          'author',
+          'frontPhoto',
+          'spinePhoto',
+          'backPhoto',
+          'conditionNote',
+          'ownerId',
+          'ownerName',
+          'visibility',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.title is string
+        && data.title.size() >= 1
+        && data.title.size() <= 150
+        && data.author is string
+        && data.author.size() >= 1
+        && data.author.size() <= 120
+        && data.frontPhoto is string
+        && data.frontPhoto.size() >= 20
+        && data.frontPhoto.size() <= 300000
+        && data.spinePhoto is string
+        && data.spinePhoto.size() >= 20
+        && data.spinePhoto.size() <= 300000
+        && data.backPhoto is string
+        && data.backPhoto.size() >= 20
+        && data.backPhoto.size() <= 300000
+        && data.conditionNote is string
+        && data.conditionNote.size() >= 0
+        && data.conditionNote.size() <= 300
+        && data.ownerId is string
+        && data.ownerId.size() >= 1
+        && data.ownerId.size() <= 128
+        && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.ownerId == request.auth.uid
+        && data.ownerName is string
+        && data.ownerName.size() >= 1
+        && data.ownerName.size() <= 80
+        && data.visibility is string
+        && data.visibility.size() == 6
+        && data.visibility == 'public'
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Pillar 2: Validation Blueprint for BookOrder (with Shiprocket & Exact Location fields)
+    function isValidBookOrder(data) {
+      return data.keys().hasAll([
+          'bookId',
+          'bookTitle',
+          'bookAuthor',
+          'sellerName',
+          'buyerId',
+          'customerName',
+          'customerPhone',
+          'exactLocation',
+          'fullAddress',
+          'landmark',
+          'city',
+          'state',
+          'pincode',
+          'status',
+          'adminEmail',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'bookId',
+          'bookTitle',
+          'bookAuthor',
+          'sellerName',
+          'buyerId',
+          'customerName',
+          'customerPhone',
+          'exactLocation',
+          'fullAddress',
+          'landmark',
+          'city',
+          'state',
+          'pincode',
+          'status',
+          'adminEmail',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.bookId is string
+        && data.bookId.size() >= 1
+        && data.bookId.size() <= 128
+        && data.bookId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.bookTitle is string
+        && data.bookTitle.size() >= 1
+        && data.bookTitle.size() <= 150
+        && data.bookAuthor is string
+        && data.bookAuthor.size() >= 1
+        && data.bookAuthor.size() <= 120
+        && data.sellerName is string
+        && data.sellerName.size() >= 1
+        && data.sellerName.size() <= 80
+        && data.buyerId is string
+        && data.buyerId.size() >= 1
+        && data.buyerId.size() <= 128
+        && data.buyerId.matches('^[a-zA-Z0-9_\\-]+$')
+        && (data.buyerId == request.auth.uid || isAdmin())
+        && data.customerName is string
+        && data.customerName.size() >= 1
+        && data.customerName.size() <= 80
+        && data.customerPhone is string
+        && data.customerPhone.size() >= 7
+        && data.customerPhone.size() <= 20
+        && data.customerPhone.matches('^\\+?[0-9\\s\\-()]+$')
+        && data.exactLocation is string
+        && data.exactLocation.size() >= 3
+        && data.exactLocation.size() <= 250
+        && data.fullAddress is string
+        && data.fullAddress.size() >= 5
+        && data.fullAddress.size() <= 250
+        && data.landmark is string
+        && data.landmark.size() >= 0
+        && data.landmark.size() <= 120
+        && data.city is string
+        && data.city.size() >= 2
+        && data.city.size() <= 80
+        && data.state is string
+        && data.state.size() >= 2
+        && data.state.size() <= 80
+        && data.pincode is string
+        && data.pincode.size() >= 4
+        && data.pincode.size() <= 12
+        && data.pincode.matches('^[0-9A-Za-z\\s\\-]+$')
+        && data.status is string
+        && data.status.size() >= 7
+        && data.status.size() <= 20
+        && (
+          data.status == 'pending'
+          || data.status == 'ready_for_shiprocket'
+          || data.status == 'dispatched'
+          || data.status == 'delivered'
+        )
+        && data.adminEmail is string
+        && data.adminEmail.size() == 23
+        && data.adminEmail == 'brobecode1765@gmail.com'
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Collection: /admins/{adminId}
+    match /admins/{adminId} {
+      allow get: if isSignedIn() && isValidId(adminId) && (adminId == request.auth.uid || isAdmin());
+
+      allow create: if isVerifiedUser()
+        && isValidId(adminId)
+        && adminId == request.auth.uid
+        && isValidAdminRecord(incoming())
+        && incoming().createdAt == request.time;
+
+      allow update, delete: if false;
+    }
+
+    // Collection: /users/{userId} (Non-PII Public Contributor Profile)
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (resource == null || existing().uid == userId);
+
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && userId == request.auth.uid
+        && isValidUserProfile(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser()
+        && isValidUserProfile(incoming())
+        && isValidId(userId)
+        && userId == request.auth.uid
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt'])
+          || incoming().diff(existing()).affectedKeys().hasOnly(['phoneVerified', 'updatedAt'])
+          || incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'phoneVerified', 'updatedAt'])
+        );
+
+      allow delete: if false;
+
+      // Subcollection: /users/{userId}/private/{docId} (Pillar 1 Master Gate + Pillar 6 PII Isolation)
+      match /private/{docId} {
+        allow get: if isSignedIn()
+          && isValidId(userId)
+          && isValidId(docId)
+          && (userId == request.auth.uid || isAdmin())
+          && docId == 'contact'
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == userId;
+
+        allow create: if isVerifiedUser()
+          && isValidId(userId)
+          && isValidId(docId)
+          && userId == request.auth.uid
+          && docId == 'contact'
+          && isValidUserPrivateContact(incoming())
+          && incoming().updatedAt == request.time
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+
+        allow update: if isVerifiedUser()
+          && isValidUserPrivateContact(incoming())
+          && isValidId(userId)
+          && isValidId(docId)
+          && userId == request.auth.uid
+          && docId == 'contact'
+          && incoming().uid == existing().uid
+          && incoming().updatedAt == request.time
+          && (
+            isAdmin()
+            || incoming().diff(existing()).affectedKeys().hasOnly(['phoneNumber', 'phoneVerified', 'updatedAt'])
+          )
+          && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+
+        allow delete: if false;
+      }
+    }
+
+    // Collection: /books/{bookId} (3-Side Old Book Archive Records)
+    match /books/{bookId} {
+      allow get: if isSignedIn()
+        && isValidId(bookId)
+        && (existing().visibility == 'public' || existing().ownerId == request.auth.uid || isAdmin());
+
+      allow list: if isSignedIn()
+        && (existing().visibility == 'public' || existing().ownerId == request.auth.uid);
+
+      allow create: if isVerifiedUser()
+        && isValidId(bookId)
+        && isValidBook(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/users/$(incoming().ownerId));
+
+      allow update: if isVerifiedUser()
+        && isValidBook(incoming())
+        && isValidId(bookId)
+        && (existing().ownerId == request.auth.uid || isAdmin())
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || incoming().diff(existing()).affectedKeys().hasOnly(['title', 'author', 'conditionNote', 'updatedAt'])
+          || incoming().diff(existing()).affectedKeys().hasOnly(['frontPhoto', 'spinePhoto', 'backPhoto', 'updatedAt'])
+          || incoming().diff(existing()).affectedKeys().hasOnly(['title', 'author', 'frontPhoto', 'spinePhoto', 'backPhoto', 'conditionNote', 'updatedAt'])
+        );
+
+      allow delete: if isVerifiedUser()
+        && isValidId(bookId)
+        && (existing().ownerId == request.auth.uid || isAdmin());
+    }
+
+    // Collection: /orders/{orderId} (Buy Now Orders with Exact Location, State & Phone PII Isolation)
+    match /orders/{orderId} {
+      // Pillar 6: PII Strictly Restricted to Buyer or Verified Admin
+      allow get: if isSignedIn()
+        && isValidId(orderId)
+        && (existing().buyerId == request.auth.uid || isAdmin());
+
+      // Pillar 8: Secure List Query Enforcer (No get/exists in list; strictly checks resource.data)
+      allow list: if isSignedIn()
+        && (
+          existing().buyerId == request.auth.uid
+          || existing().adminEmail == 'brobecode1765@gmail.com'
+        );
+
+      // Pillar 10 & 11: Auth -> Static Validation -> Relational Validation
+      allow create: if isVerifiedUser()
+        && isValidId(orderId)
+        && isValidBookOrder(incoming())
+        && incoming().buyerId == request.auth.uid
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/users/$(incoming().buyerId))
+        && exists(/databases/$(database)/documents/books/$(incoming().bookId));
+
+      // Pillar 4.5, 4.6, 4.9: Validation Helper First + Terminal State Lock + Admin Override
+      allow update: if isVerifiedUser()
+        && isValidBookOrder(incoming())
+        && isValidId(orderId)
+        && incoming().buyerId == existing().buyerId
+        && incoming().bookId == existing().bookId
+        && incoming().adminEmail == existing().adminEmail
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (existing().status != 'delivered' || isAdmin())
+        && (
+          isAdmin()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(orderId) && isAdmin();
+    }
+  }
+}
