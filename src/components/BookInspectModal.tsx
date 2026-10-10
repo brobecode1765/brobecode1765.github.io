@@ -9,7 +9,7 @@ export interface BookRecord {
   frontPhoto: string;
   spinePhoto: string;
   backPhoto: string;
-  conditionNote: string;
+  conditionNote?: string;
   ownerId: string;
   ownerName: string;
   visibility: 'public';
@@ -21,8 +21,8 @@ interface BookInspectModalProps {
   book: BookRecord | null;
   currentUserId?: string;
   onClose: () => void;
-  onDelete?: (bookId: string) => Promise<void>;
-  onBuyNow?: (book: BookRecord) => void;
+  onDelete: (bookId: string) => Promise<void>;
+  onBuyNow: (book: BookRecord) => void;
 }
 
 export const BookInspectModal: React.FC<BookInspectModalProps> = ({
@@ -34,28 +34,18 @@ export const BookInspectModal: React.FC<BookInspectModalProps> = ({
 }) => {
   const [selectedSide, setSelectedSide] = useState<BookSideKey>('frontPhoto');
   const [isDeleting, setIsDeleting] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (!book) return null;
 
-  const isOwner = Boolean(currentUserId && book.ownerId === currentUserId);
-  const formattedDate = book.createdAt?.seconds
-    ? new Date(book.createdAt.seconds * 1000).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      })
-    : 'Recently cataloged';
+  const isOwner = Boolean(currentUserId && currentUserId === book.ownerId);
 
-  const handleDelete = async () => {
-    if (!onDelete) return;
+  const handleConfirmDelete = async () => {
     setIsDeleting(true);
     try {
       await onDelete(book.id);
       onClose();
     } finally {
       setIsDeleting(false);
-      setConfirmDelete(false);
     }
   };
 
@@ -66,174 +56,125 @@ export const BookInspectModal: React.FC<BookInspectModalProps> = ({
       aria-modal="true"
       aria-labelledby="inspect-book-title"
     >
-      <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl border border-stone-200 bg-[#FAF8F5] text-stone-900 shadow-2xl">
-        {/* Top bar */}
-        <div className="flex items-center justify-between border-b border-stone-200 bg-white px-6 py-4">
-          <div className="flex items-center gap-2 text-xs text-stone-500">
-            <span>3-Side Archival Inspection</span>
-            <span aria-hidden="true">·</span>
-            <span>Added by {book.ownerName}</span>
-            <span aria-hidden="true">·</span>
-            <span>{formattedDate}</span>
+      <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-xl border border-stone-200 bg-[#FAF8F5] text-stone-900 shadow-2xl">
+        {/* Top Bar */}
+        <div className="flex items-center justify-between border-b border-stone-200 px-6 py-4">
+          <div className="min-w-0 pr-4">
+            <div className="flex items-center gap-2 text-xs text-stone-500">
+              <span>Added by {book.ownerName}</span>
+              <span aria-hidden="true">·</span>
+              <span className="font-mono tabular-nums">3-Side Verified Record</span>
+            </div>
+            <h2
+              id="inspect-book-title"
+              className="truncate font-serif text-xl font-semibold text-stone-900"
+            >
+              {book.title}
+            </h2>
+            <p className="text-sm text-stone-600">By {book.author}</p>
           </div>
+
           <button
             type="button"
             onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-lg text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900"
-            aria-label="Close inspection view"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-stone-500 transition-colors hover:bg-stone-200/70 hover:text-stone-900"
+            aria-label="Close inspection modal"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Main 2-Column Content */}
-        <div className="grid grid-cols-1 gap-8 p-6 lg:grid-cols-12 lg:items-stretch">
-          {/* Left Column: Active Side Image + 3-Side Strip */}
-          <div className="flex flex-col gap-4 lg:col-span-7">
-            <div className="relative aspect-4/3 w-full overflow-hidden rounded-lg border border-stone-200 bg-stone-100">
+        {/* Main 3-Side Inspection Area */}
+        <div className="grid grid-cols-1 gap-6 p-6 lg:grid-cols-12">
+          {/* Primary Enlarged Side Photo */}
+          <div className="lg:col-span-8">
+            <div className="relative aspect-4/3 w-full overflow-hidden rounded-xl border border-stone-200 bg-stone-100">
               <img
                 src={book[selectedSide]}
                 alt={`${book.title} — ${selectedSide}`}
                 referrerPolicy="no-referrer"
                 className="h-full w-full object-contain bg-stone-900/5"
               />
-            </div>
-
-            {/* All 3 Sides Selector Strip */}
-            <div className="grid grid-cols-3 gap-3">
-              {BOOK_SIDES.map((side) => {
-                const isSelected = selectedSide === side.key;
-                return (
-                  <button
-                    key={side.key}
-                    type="button"
-                    onClick={() => setSelectedSide(side.key)}
-                    className={`group flex flex-col overflow-hidden rounded-lg border text-left transition-all ${
-                      isSelected
-                        ? 'border-rose-900 bg-white shadow-xs'
-                        : 'border-stone-200 bg-white/60 hover:border-stone-400'
-                    }`}
-                  >
-                    <div className="aspect-4/3 w-full overflow-hidden bg-stone-100">
-                      <img
-                        src={book[side.key]}
-                        alt={`${book.title} ${side.shortLabel}`}
-                        referrerPolicy="no-referrer"
-                        className="h-full w-full object-cover transition-transform duration-150 group-hover:scale-105"
-                      />
-                    </div>
-                    <div className="px-2.5 py-2 text-xs font-medium text-stone-800">
-                      {side.stepNumber}. {side.shortLabel}
-                    </div>
-                  </button>
-                );
-              })}
+              <div className="absolute bottom-3 left-3 rounded bg-stone-950/75 px-3 py-1 font-mono text-xs text-stone-100 backdrop-blur-xs">
+                {BOOK_SIDES.find((s) => s.key === selectedSide)?.label}
+              </div>
             </div>
           </div>
 
-          {/* Right Column: Contiguous Book Record Details */}
-          <div className="flex flex-col justify-between rounded-lg border border-stone-200 bg-white p-6 lg:col-span-5">
-            <div className="space-y-6">
+          {/* All 3 Side Selector & Details */}
+          <div className="flex flex-col justify-between gap-6 lg:col-span-4">
+            <div className="space-y-4">
               <div>
-                <div className="text-xs font-medium text-stone-500">
-                  Book Title & Author Record
-                </div>
-                <h2
-                  id="inspect-book-title"
-                  className="mt-1 font-serif text-2xl font-semibold text-stone-900"
-                >
-                  {book.title}
-                </h2>
-                <p className="mt-1 text-base font-medium text-stone-700">
-                  By {book.author}
-                </p>
-              </div>
-
-              <div className="space-y-3 border-t border-stone-200 pt-4 text-sm">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-stone-500">Added By</span>
-                  <span className="font-medium text-stone-900">{book.ownerName}</span>
-                </div>
-                <div className="flex items-baseline justify-between">
-                  <span className="text-stone-500">Photographed Sides</span>
-                  <span className="font-mono text-xs tabular-nums text-stone-800">
-                    3 / 3 (Front · Spine · Back)
-                  </span>
-                </div>
-                <div className="flex items-baseline justify-between">
-                  <span className="text-stone-500">Catalog Date</span>
-                  <span className="font-mono text-xs tabular-nums text-stone-700">
-                    {formattedDate}
-                  </span>
+                <h3 className="text-xs font-semibold tracking-wider text-stone-500 uppercase">
+                  Inspect All 3 Sides
+                </h3>
+                <div className="mt-2.5 grid grid-cols-3 gap-2.5 lg:grid-cols-1">
+                  {BOOK_SIDES.map((side) => {
+                    const isSelected = selectedSide === side.key;
+                    return (
+                      <button
+                        key={side.key}
+                        type="button"
+                        onClick={() => setSelectedSide(side.key)}
+                        className={`flex items-center gap-3 rounded-lg border p-2 text-left transition-all ${
+                          isSelected
+                            ? 'border-rose-900 bg-rose-900/5 text-stone-900'
+                            : 'border-stone-200 bg-white text-stone-600 hover:border-stone-300'
+                        }`}
+                      >
+                        <img
+                          src={book[side.key]}
+                          alt={side.shortLabel}
+                          referrerPolicy="no-referrer"
+                          className="h-12 w-12 shrink-0 rounded object-cover border border-stone-200"
+                        />
+                        <div className="min-w-0">
+                          <div className="font-mono text-[11px] text-stone-500">
+                            SIDE {side.stepNumber}
+                          </div>
+                          <div className="truncate text-xs font-semibold text-stone-900">
+                            {side.shortLabel}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
               {book.conditionNote && (
-                <div className="border-t border-stone-200 pt-4">
-                  <div className="text-xs font-medium text-stone-500">
-                    Condition & Edition Notes
+                <div className="rounded-lg border border-stone-200 bg-white p-3.5">
+                  <div className="text-xs font-semibold text-stone-500">
+                    Condition & Edition Note
                   </div>
-                  <p className="mt-1.5 text-sm leading-relaxed text-stone-700">
+                  <p className="mt-1 text-sm leading-relaxed text-stone-700">
                     {book.conditionNote}
                   </p>
                 </div>
               )}
             </div>
 
-            <div className="mt-8 border-t border-stone-200 pt-4 space-y-2.5">
-              {onBuyNow && (
+            <div className="space-y-2.5 border-t border-stone-200 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onBuyNow(book);
+                }}
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-rose-900 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-rose-800 whitespace-nowrap shrink-0"
+              >
+                Buy Now (Set Exact Location & Order)
+              </button>
+
+              {isOwner && (
                 <button
                   type="button"
-                  onClick={() => {
-                    onClose();
-                    onBuyNow(book);
-                  }}
-                  className="w-full rounded-lg bg-rose-900 px-4 py-3 text-xs font-semibold text-white transition-colors hover:bg-rose-800 whitespace-nowrap shrink-0"
+                  disabled={isDeleting}
+                  onClick={handleConfirmDelete}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-rose-200 bg-rose-50/70 px-4 py-2.5 text-xs font-semibold text-rose-800 transition-colors hover:bg-rose-100 disabled:opacity-50 whitespace-nowrap shrink-0"
                 >
-                  Buy Now (Set Exact Location & Delivery Address)
-                </button>
-              )}
-              {isOwner && onDelete ? (
-                !confirmDelete ? (
-                  <button
-                    type="button"
-                    onClick={() => setConfirmDelete(true)}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-rose-200 bg-rose-50/60 px-4 py-2.5 text-xs font-semibold text-rose-900 transition-colors hover:bg-rose-100 whitespace-nowrap shrink-0"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Remove Book from Archive
-                  </button>
-                ) : (
-                  <div className="space-y-2">
-                    <p className="text-xs text-rose-900">
-                      Permanently delete "{book.title}" from the catalog?
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={isDeleting}
-                        onClick={handleDelete}
-                        className="flex-1 rounded-lg bg-rose-800 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50 whitespace-nowrap shrink-0"
-                      >
-                        {isDeleting ? 'Removing...' : 'Confirm Delete'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDelete(false)}
-                        className="flex-1 rounded-lg border border-stone-300 bg-white px-3 py-2 text-xs font-medium text-stone-700 hover:bg-stone-50 whitespace-nowrap shrink-0"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )
-              ) : (
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="w-full rounded-lg bg-stone-900 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-stone-800 whitespace-nowrap shrink-0"
-                >
-                  Close Inspection
+                  <Trash2 className="h-4 w-4" />
+                  {isDeleting ? 'Removing from Archive...' : 'Remove My Book Listing'}
                 </button>
               )}
             </div>

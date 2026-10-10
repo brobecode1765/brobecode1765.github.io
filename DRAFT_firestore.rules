@@ -228,7 +228,7 @@ service cloud.firestore {
         && data.fullAddress.size() <= 250
         && data.landmark is string
         && data.landmark.size() >= 0
-        && data.landmark.size() <= 120
+        && data.landmark.size() <= 300
         && data.city is string
         && data.city.size() >= 2
         && data.city.size() <= 80

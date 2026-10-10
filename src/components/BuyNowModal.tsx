@@ -34,27 +34,24 @@ interface BuyNowModalProps {
   currentUser: User | null;
   defaultCustomerName: string;
   verifiedPhone: string | null;
-  onPhoneVerified: (formattedPhone: string, signedInUser?: User) => Promise<void>;
+  onPhoneVerified: (phone: string, signedInUser?: User) => Promise<void>;
   onSubmitOrder: (payload: OrderSubmissionPayload) => Promise<string>;
   onClose: () => void;
 }
 
-const INDIAN_STATES_AND_UTS = [
+export const INDIAN_STATES_AND_UTS = [
   'Andhra Pradesh',
   'Arunachal Pradesh',
   'Assam',
   'Bihar',
   'Chhattisgarh',
-  'Delhi (NCT)',
   'Goa',
   'Gujarat',
   'Haryana',
   'Himachal Pradesh',
-  'Jammu and Kashmir',
   'Jharkhand',
   'Karnataka',
   'Kerala',
-  'Ladakh',
   'Madhya Pradesh',
   'Maharashtra',
   'Manipur',
@@ -62,7 +59,6 @@ const INDIAN_STATES_AND_UTS = [
   'Mizoram',
   'Nagaland',
   'Odisha',
-  'Puducherry',
   'Punjab',
   'Rajasthan',
   'Sikkim',
@@ -72,7 +68,14 @@ const INDIAN_STATES_AND_UTS = [
   'Uttar Pradesh',
   'Uttarakhand',
   'West Bengal',
-  'Other / International',
+  'Andaman and Nicobar Islands',
+  'Chandigarh',
+  'Dadra and Nagar Haveli and Daman and Diu',
+  'Delhi (NCT)',
+  'Jammu and Kashmir',
+  'Ladakh',
+  'Lakshadweep',
+  'Puducherry',
 ];
 
 export const BuyNowModal: React.FC<BuyNowModalProps> = ({
@@ -84,13 +87,13 @@ export const BuyNowModal: React.FC<BuyNowModalProps> = ({
   onSubmitOrder,
   onClose,
 }) => {
-  // Step 1: Exact Location State (FIRST OF ALL when Buy Now is clicked)
+  // Step 1 (FIRST OF ALL): Exact Location state
   const [exactLocation, setExactLocation] = useState('');
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [isDetectingLocation, setIsDetectingLocation] = useState(false);
   const [locationStatusMsg, setLocationStatusMsg] = useState<string | null>(null);
 
-  // Step 2: Shiprocket Delivery Address, State & Sender Phone Number
+  // Step 2: Delivery Address & State for Shiprocket
   const [customerName, setCustomerName] = useState(defaultCustomerName);
   const [customerPhone, setCustomerPhone] = useState(verifiedPhone || '');
   const [fullAddress, setFullAddress] = useState('');
@@ -99,7 +102,7 @@ export const BuyNowModal: React.FC<BuyNowModalProps> = ({
   const [stateName, setStateName] = useState('');
   const [pincode, setPincode] = useState('');
 
-  // Submission & Confirmation state
+  // Submission state
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [confirmedOrderId, setConfirmedOrderId] = useState<string | null>(null);
@@ -115,7 +118,6 @@ export const BuyNowModal: React.FC<BuyNowModalProps> = ({
   }, [verifiedPhone]);
 
   useEffect(() => {
-    // Reset confirmation state when opening for a new book
     setConfirmedOrderId(null);
     setErrorMsg(null);
   }, [book?.id]);
@@ -143,7 +145,6 @@ export const BuyNowModal: React.FC<BuyNowModalProps> = ({
         const coordString = `GPS: ${lat}, ${lng}`;
         setExactLocation(coordString);
 
-        // Attempt reverse geocoding via OpenStreetMap Nominatim to pre-fill State, City, PIN, and Exact Locality
         try {
           const response = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
@@ -155,7 +156,8 @@ export const BuyNowModal: React.FC<BuyNowModalProps> = ({
           );
 
           if (response.ok) {
-            const data = await response.json();
+            const rawText = await response.text();
+            const data = rawText.trim().startsWith('{') ? JSON.parse(rawText) : {};
             const addr = data?.address || {};
             const displayName = typeof data?.display_name === 'string' ? data.display_name : '';
 
@@ -181,33 +183,25 @@ export const BuyNowModal: React.FC<BuyNowModalProps> = ({
               : coordString;
 
             setExactLocation(fullExact);
+
+            if (detectedState) {
+              const matchedState = INDIAN_STATES_AND_UTS.find((s) =>
+                s.toLowerCase().includes(detectedState.toLowerCase())
+              );
+              setStateName(matchedState || detectedState);
+            }
+            if (detectedCity && !city) {
+              setCity(detectedCity.slice(0, BLUEPRINT_LIMITS.ORDER_CITY_MAX));
+            }
+            if (detectedPin && !pincode) {
+              setPincode(detectedPin.slice(0, BLUEPRINT_LIMITS.ORDER_PINCODE_MAX));
+            }
             if (roadPart && !fullAddress) {
               setFullAddress(roadPart.slice(0, BLUEPRINT_LIMITS.ORDER_ADDRESS_MAX));
             }
-            if (detectedCity && !city) {
-              setCity(String(detectedCity).slice(0, BLUEPRINT_LIMITS.ORDER_CITY_MAX));
-            }
-            if (detectedState) {
-              // Match with state list if possible, otherwise set directly
-              const matched = INDIAN_STATES_AND_UTS.find((s) =>
-                s.toLowerCase().includes(String(detectedState).toLowerCase())
-              );
-              setStateName(
-                (matched || String(detectedState)).slice(
-                  0,
-                  BLUEPRINT_LIMITS.ORDER_STATE_MAX
-                )
-              );
-            }
-            if (detectedPin && !pincode) {
-              setPincode(
-                String(detectedPin)
-                  .replace(/[^0-9A-Za-z\s\-]/g, '')
-                  .slice(0, BLUEPRINT_LIMITS.ORDER_PINCODE_MAX)
-              );
-            }
+
             setLocationStatusMsg(
-              'Exact GPS coordinates and address details detected automatically.'
+              'Exact GPS coordinates, locality, city, and state automatically populated!'
             );
           } else {
             setLocationStatusMsg('Exact GPS coordinates captured.');
@@ -218,15 +212,21 @@ export const BuyNowModal: React.FC<BuyNowModalProps> = ({
           setIsDetectingLocation(false);
         }
       },
-      (err) => {
+      (geoErr) => {
         setIsDetectingLocation(false);
-        setErrorMsg(
-          `Could not auto-detect GPS (${err.message}). Please type your exact location and area in Step 1 below.`
-        );
+        if (geoErr.code === geoErr.PERMISSION_DENIED) {
+          setErrorMsg(
+            'Location permission was denied. Please allow location access or type your exact location manually.'
+          );
+        } else {
+          setErrorMsg(
+            'Could not auto-detect GPS signal. Please type your exact location below.'
+          );
+        }
       },
       {
         enableHighAccuracy: true,
-        timeout: 10000,
+        timeout: 12000,
         maximumAge: 0,
       }
     );
@@ -239,11 +239,10 @@ export const BuyNowModal: React.FC<BuyNowModalProps> = ({
     const cleanExactLocation = exactLocation
       .trim()
       .slice(0, BLUEPRINT_LIMITS.ORDER_EXACT_LOCATION_MAX);
-    const cleanName = customerName.trim().slice(0, BLUEPRINT_LIMITS.DISPLAY_NAME_MAX);
     const cleanPhone = (verifiedPhone || customerPhone)
       .trim()
-      .replace(/[^\d+\s\-()]/g, '')
       .slice(0, BLUEPRINT_LIMITS.PHONE_MAX);
+    const cleanName = customerName.trim().slice(0, BLUEPRINT_LIMITS.DISPLAY_NAME_MAX);
     const cleanAddress = fullAddress
       .trim()
       .slice(0, BLUEPRINT_LIMITS.ORDER_ADDRESS_MAX);
@@ -252,14 +251,11 @@ export const BuyNowModal: React.FC<BuyNowModalProps> = ({
       .slice(0, BLUEPRINT_LIMITS.ORDER_LANDMARK_MAX);
     const cleanCity = city.trim().slice(0, BLUEPRINT_LIMITS.ORDER_CITY_MAX);
     const cleanState = stateName.trim().slice(0, BLUEPRINT_LIMITS.ORDER_STATE_MAX);
-    const cleanPincode = pincode
-      .trim()
-      .replace(/[^0-9A-Za-z\s\-]/g, '')
-      .slice(0, BLUEPRINT_LIMITS.ORDER_PINCODE_MAX);
+    const cleanPincode = pincode.trim().slice(0, BLUEPRINT_LIMITS.ORDER_PINCODE_MAX);
 
     if (cleanExactLocation.length < BLUEPRINT_LIMITS.ORDER_EXACT_LOCATION_MIN) {
       setErrorMsg(
-        'Step 1 Required: Please click "Detect My Exact Location (GPS)" or enter your exact location first.'
+        'First of all, please detect or enter your Exact Location (Step 01) before placing the order.'
       );
       return;
     }
@@ -422,7 +418,7 @@ export const BuyNowModal: React.FC<BuyNowModalProps> = ({
             </button>
           </div>
         ) : (
-          /* Checkout Form: Step 1 Exact Location -> Step 2 Phone & Shiprocket Address */
+          /* Checkout Form: Step 1 Exact Location -> Step 2 Phone -> Step 3 Shiprocket Address */
           <form onSubmit={handleSubmit} className="space-y-6 p-6">
             {/* Book Summary Bar */}
             <div className="flex items-center gap-4 rounded-xl border border-stone-200 bg-white p-3.5">
@@ -525,15 +521,15 @@ export const BuyNowModal: React.FC<BuyNowModalProps> = ({
             </div>
 
             {/* ==============================================================
-               STEP 02: PHONE NUMBER FROM WHICH ORDER IS SENT
+               STEP 02: PHONE NUMBER & OTP VERIFICATION
                ============================================================== */}
             <div className="rounded-xl border border-stone-200 bg-white p-5 space-y-4">
               <div>
                 <h3 className="font-serif text-base font-semibold text-stone-900">
-                  02. Phone Number (Order Contact & OTP Verification)
+                  02. Phone Number (Order Sender Number)
                 </h3>
                 <p className="text-xs text-stone-600">
-                  This phone number is recorded with your order for Shiprocket delivery updates.
+                  Verify via SMS OTP or confirm your active phone number for courier updates.
                 </p>
               </div>
 
@@ -552,7 +548,7 @@ export const BuyNowModal: React.FC<BuyNowModalProps> = ({
                   htmlFor="order-phone-input"
                   className="block text-xs font-semibold text-stone-700"
                 >
-                  Active Delivery Phone Number *
+                  Active Mobile Phone Number *
                 </label>
                 <div className="relative mt-1.5">
                   <Phone className="pointer-events-none absolute top-2.5 left-3 h-4 w-4 text-stone-400" />
@@ -632,7 +628,7 @@ export const BuyNowModal: React.FC<BuyNowModalProps> = ({
                   <input
                     id="order-landmark"
                     type="text"
-                    maxLength={BLUEPRINT_LIMITS.ORDER_LANDMARK_MAX}
+                    maxLength={120}
                     value={landmark}
                     onChange={(e) => setLandmark(e.target.value)}
                     placeholder="e.g., Near Central Library"

@@ -243,9 +243,9 @@
         },
         "landmark": {
           "type": "string",
-          "description": "Optional nearby landmark for courier delivery.",
+          "description": "Optional nearby landmark plus automated phone call doubt/feedback and price notes.",
           "minLength": 0,
-          "maxLength": 120
+          "maxLength": 300
         },
         "city": {
           "type": "string",

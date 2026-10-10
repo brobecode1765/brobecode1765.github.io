@@ -61,14 +61,20 @@ import {
   BookOrderRecord,
   OrderStatus,
 } from './components/AdminOrdersPanel';
+import { SarasSplashScreen } from './components/SarasSplashScreen';
 import { compressImageFileToDataUrl } from './utils/imageCompression';
 import heroBooksImg from './assets/images/saras_vintage_books_hero_1791552919016.jpg';
+import sarasLogoImg from './assets/images/saras_brand_logo_1791632744713.jpg';
 
 type AuthMode = 'login' | 'signup';
 type WorkspaceOption = 'browse' | 'add' | 'my-orders' | 'admin';
 type CatalogScope = 'all' | 'mine';
 
 export default function App() {
+  // Blinkit-style Starting Splash Screen state
+  const [showSplash, setShowSplash] = useState(true);
+  const [logoImgBroken, setLogoImgBroken] = useState(false);
+
   // Auth state
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -150,22 +156,17 @@ export default function App() {
     e.preventDefault();
     setAdminPasswordError(null);
 
-    if (adminPasswordInput !== 'hello') {
+    if (adminPasswordInput.trim() !== 'hello') {
       setAdminPasswordError(
         'Access Denied — Incorrect Admin Password. Only the owner knows the secret password.'
       );
       return;
     }
 
-    if (!user) {
-      setAdminPasswordError('Please sign in first before unlocking the Admin Panel.');
-      return;
-    }
-
     setIsUnlockingAdmin(true);
     try {
-      const cleanUid = user.uid.trim();
-      if (isUserTokenVerified(user)) {
+      if (user && isUserTokenVerified(user)) {
+        const cleanUid = user.uid.trim();
         const adminDocRef = doc(db, 'admins', cleanUid);
         const adminSnap = await getDoc(adminDocRef);
         if (!adminSnap.exists()) {
@@ -179,7 +180,9 @@ export default function App() {
       setIsAdminUnlocked(true);
       setAdminPasswordInput('');
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `admins/${user.uid}`);
+      if (user) {
+        handleFirestoreError(error, OperationType.WRITE, `admins/${user.uid}`);
+      }
     } finally {
       setIsUnlockingAdmin(false);
     }
@@ -445,58 +448,89 @@ export default function App() {
     return () => unsubscribe();
   }, [isAuthReady, user]);
 
-  // Real-time Firestore listener for Admin Orders (STRICTLY ONLY for brobecode1765@gmail.com)
+  // Real-time Firestore listener for Admin Orders (Unlocked with password "hello")
   useEffect(() => {
     if (!isAuthReady || !user || !isAdminUser) {
       setAdminOrders([]);
       return;
     }
 
-    setIsLoadingAdminOrders(true);
-    const ordersRef = collection(db, 'orders');
-    const adminOrdersQuery = query(
-      ordersRef,
-      where('adminEmail', '==', BLUEPRINT_LIMITS.ADMIN_EMAIL)
-    );
+    let unsubscribeSnapshot: (() => void) | null = null;
+    let isCancelled = false;
 
-    const unsubscribe = onSnapshot(
-      adminOrdersQuery,
-      (snapshot) => {
-        const list: BookOrderRecord[] = snapshot.docs.map((docSnap) => {
-          const d = docSnap.data();
-          return {
-            id: docSnap.id,
-            bookId: String(d.bookId || ''),
-            bookTitle: String(d.bookTitle || ''),
-            bookAuthor: String(d.bookAuthor || ''),
-            sellerName: String(d.sellerName || ''),
-            buyerId: String(d.buyerId || ''),
-            customerName: String(d.customerName || ''),
-            customerPhone: String(d.customerPhone || ''),
-            exactLocation: String(d.exactLocation || ''),
-            fullAddress: String(d.fullAddress || ''),
-            landmark: String(d.landmark || ''),
-            city: String(d.city || ''),
-            state: String(d.state || ''),
-            pincode: String(d.pincode || ''),
-            status: (d.status as OrderStatus) || 'pending',
-            adminEmail: String(d.adminEmail || BLUEPRINT_LIMITS.ADMIN_EMAIL),
-            createdAt: d.createdAt || null,
-            updatedAt: d.updatedAt || null,
-          };
-        });
-
-        list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-        setAdminOrders(list);
-        setIsLoadingAdminOrders(false);
-      },
-      (error) => {
-        setIsLoadingAdminOrders(false);
-        handleFirestoreError(error, OperationType.LIST, 'orders');
+    const startAdminListener = async () => {
+      setIsLoadingAdminOrders(true);
+      try {
+        const cleanUid = user.uid.trim();
+        if (isUserTokenVerified(user)) {
+          const adminDocRef = doc(db, 'admins', cleanUid);
+          const adminSnap = await getDoc(adminDocRef);
+          if (!adminSnap.exists()) {
+            await setDoc(adminDocRef, {
+              uid: cleanUid,
+              accessCode: 'hello',
+              createdAt: serverTimestamp(),
+            });
+          }
+        }
+      } catch (err) {
+        console.error(err);
       }
-    );
 
-    return () => unsubscribe();
+      if (isCancelled) return;
+
+      const ordersRef = collection(db, 'orders');
+      const adminOrdersQuery = query(
+        ordersRef,
+        where('adminEmail', '==', BLUEPRINT_LIMITS.ADMIN_EMAIL)
+      );
+
+      unsubscribeSnapshot = onSnapshot(
+        adminOrdersQuery,
+        (snapshot) => {
+          const list: BookOrderRecord[] = snapshot.docs.map((docSnap) => {
+            const d = docSnap.data();
+            return {
+              id: docSnap.id,
+              bookId: String(d.bookId || ''),
+              bookTitle: String(d.bookTitle || ''),
+              bookAuthor: String(d.bookAuthor || ''),
+              sellerName: String(d.sellerName || ''),
+              buyerId: String(d.buyerId || ''),
+              customerName: String(d.customerName || ''),
+              customerPhone: String(d.customerPhone || ''),
+              exactLocation: String(d.exactLocation || ''),
+              fullAddress: String(d.fullAddress || ''),
+              landmark: String(d.landmark || ''),
+              city: String(d.city || ''),
+              state: String(d.state || ''),
+              pincode: String(d.pincode || ''),
+              status: (d.status as OrderStatus) || 'pending',
+              adminEmail: String(d.adminEmail || BLUEPRINT_LIMITS.ADMIN_EMAIL),
+              createdAt: d.createdAt || null,
+              updatedAt: d.updatedAt || null,
+            };
+          });
+
+          list.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+          setAdminOrders(list);
+          setIsLoadingAdminOrders(false);
+        },
+        (error) => {
+          setIsLoadingAdminOrders(false);
+          handleFirestoreError(error, OperationType.LIST, 'orders');
+        }
+      );
+    };
+
+    startAdminListener();
+
+    return () => {
+      isCancelled = true;
+      if (unsubscribeSnapshot) {
+        unsubscribeSnapshot();
+      }
+    };
   }, [isAuthReady, user, isAdminUser]);
 
   // Filtered books by search query
@@ -840,34 +874,181 @@ export default function App() {
 
   const capturedSidesCount = BOOK_SIDES.filter((s) => Boolean(photos[s.key])).length;
 
+  // =========================================================================
+  // BLINKIT-STYLE STARTING SPLASH SCREEN (Shows Logo & SARAS Name Before App)
+  // =========================================================================
+  if (showSplash) {
+    return <SarasSplashScreen onFinish={() => setShowSplash(false)} />;
+  }
+
+  // =========================================================================
+  // EXCLUSIVE STANDALONE ADMIN PANEL MODE
+  // When user clicks "Admin Panel":
+  // - If password "hello" is entered -> ONLY and ONLY the Admin Panel UI renders
+  // - If locked -> Dedicated full-screen Admin Password Gate renders
+  // =========================================================================
+  if (activeOption === 'admin') {
+    if (isAdminUnlocked) {
+      return (
+        <AdminOrdersPanel
+          adminEmail={user?.email || BLUEPRINT_LIMITS.ADMIN_EMAIL}
+          isSignedIn={Boolean(user)}
+          orders={adminOrders}
+          isLoading={isLoadingAdminOrders}
+          onUpdateOrderStatus={handleAdminUpdateOrderStatus}
+          onAdminGoogleSignIn={handleGoogleAuth}
+          onLockAdmin={() => {
+            setIsAdminUnlocked(false);
+            setAdminPasswordInput('');
+            setAdminPasswordError(null);
+            setActiveOption('browse');
+          }}
+        />
+      );
+    }
+
+    return (
+      <div className="min-h-screen flex flex-col justify-between bg-slate-950 px-6 py-10 text-slate-100">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between">
+          <div className="font-serif text-xl font-bold tracking-tight text-white">
+            SARAS Admin
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setAdminPasswordError(null);
+              setAdminPasswordInput('');
+              setActiveOption('browse');
+            }}
+            className="rounded-lg border border-slate-800 bg-slate-900 px-4 py-2 text-xs font-semibold text-slate-300 transition-colors hover:bg-slate-800 hover:text-white whitespace-nowrap shrink-0"
+          >
+            Back to SARAS Store
+          </button>
+        </div>
+
+        <div className="mx-auto w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-8 shadow-xl">
+          <div className="flex flex-col items-center text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-rose-900/30 text-rose-400 border border-rose-800/40">
+              <KeyRound className="h-6 w-6" />
+            </div>
+            <h1 className="mt-4 font-serif text-2xl font-semibold text-white">
+              Owner Admin Panel Access
+            </h1>
+            <p className="mt-2 text-xs leading-relaxed text-slate-400">
+              Enter your secret Admin Password to open the standalone Admin Panel with customer
+              phone numbers, exact GPS delivery locations, states, and Shiprocket dispatch
+              tools.
+            </p>
+          </div>
+
+          {adminPasswordError && (
+            <div className="mt-5 flex items-start gap-2 rounded-lg border border-rose-800/60 bg-rose-950/60 p-3.5 text-xs text-rose-200">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-400" />
+              <span>{adminPasswordError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleAdminPasswordSubmit} className="mt-6 space-y-4">
+            <div>
+              <label
+                htmlFor="admin-secret-password"
+                className="block text-xs font-semibold text-slate-300"
+              >
+                Admin Password
+              </label>
+              <input
+                id="admin-secret-password"
+                type="password"
+                required
+                autoFocus
+                value={adminPasswordInput}
+                onChange={(e) => {
+                  setAdminPasswordInput(e.target.value);
+                  setAdminPasswordError(null);
+                }}
+                placeholder="Enter secret password..."
+                className="mt-1.5 w-full rounded-lg border border-slate-700 bg-slate-950 px-3.5 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-rose-600 focus:outline-none"
+              />
+            </div>
+
+            <div className="flex items-center gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setAdminPasswordError(null);
+                  setAdminPasswordInput('');
+                  setActiveOption('browse');
+                }}
+                className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-xs font-semibold text-slate-300 transition-colors hover:bg-slate-700 whitespace-nowrap shrink-0"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isUnlockingAdmin}
+                className="flex-1 rounded-lg bg-rose-800 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-50 whitespace-nowrap shrink-0"
+              >
+                {isUnlockingAdmin ? 'Unlocking...' : 'Open Admin Panel'}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div className="text-center text-xs text-slate-500">
+          SARAS Owner Shiprocket Fulfillment Console · Password Protected
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF8F5] text-stone-900">
+    <div className="min-h-screen flex flex-col bg-gradient-to-b from-[#FAF5FF] via-[#FFFDF7] to-[#F3E8FF]/60 text-stone-900">
       {/* Top Bar Contract: Strictly 1 row, 3 zones separated by gap-8 */}
-      <header className="sticky top-0 z-30 flex items-center justify-between gap-8 border-b border-stone-200 bg-[#FAF8F5]/95 px-6 py-4 backdrop-blur-xs">
-        {/* Zone 1: Single text element wordmark */}
+      <header className="sticky top-0 z-30 flex items-center justify-between gap-8 border-b-2 border-amber-400/70 bg-gradient-to-r from-[#2A083B] via-[#3E1057] to-[#2A083B] px-6 py-3.5 text-white shadow-md">
+        {/* Zone 1: Brand Emblem + SARAS Wordmark */}
         <a
           href="#top"
           onClick={(e) => {
             e.preventDefault();
             if (user) setActiveOption('browse');
           }}
-          className="font-serif text-xl font-bold tracking-tight text-stone-900 whitespace-nowrap shrink-0"
+          className="flex items-center gap-3 whitespace-nowrap shrink-0 group"
         >
-          SARAS
+          {!logoImgBroken ? (
+            <img
+              src={sarasLogoImg}
+              alt="SARAS Logo"
+              referrerPolicy="no-referrer"
+              onError={() => setLogoImgBroken(true)}
+              className="h-11 w-11 rounded-full border-2 border-amber-400 object-cover shadow-sm transition-transform group-hover:scale-105"
+            />
+          ) : (
+            <div className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-amber-400 bg-[#380E4E] font-serif text-sm font-bold text-amber-300">
+              S
+            </div>
+          )}
+          <div>
+            <div className="font-serif text-xl font-bold tracking-wider text-white">
+              SAR<span className="text-amber-400">A</span>S
+            </div>
+            <div className="text-[10px] font-medium tracking-wide text-amber-300">
+              Buy • Sell • Share Books
+            </div>
+          </div>
         </a>
 
         {/* Zone 2: 4–5 concise single-line text navigation links */}
         {user ? (
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-stone-600">
+          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-purple-100">
             <button
               type="button"
               onClick={() => {
                 setActiveOption('browse');
                 setCatalogScope('all');
               }}
-              className={`transition-colors hover:text-stone-900 whitespace-nowrap shrink-0 ${
+              className={`transition-colors hover:text-amber-300 whitespace-nowrap shrink-0 ${
                 activeOption === 'browse' && catalogScope === 'all'
-                  ? 'text-stone-900 underline underline-offset-8'
+                  ? 'text-amber-300 underline decoration-amber-400 decoration-2 underline-offset-8 font-semibold'
                   : ''
               }`}
             >
@@ -876,8 +1057,10 @@ export default function App() {
             <button
               type="button"
               onClick={() => setActiveOption('add')}
-              className={`transition-colors hover:text-stone-900 whitespace-nowrap shrink-0 ${
-                activeOption === 'add' ? 'text-stone-900 underline underline-offset-8' : ''
+              className={`transition-colors hover:text-amber-300 whitespace-nowrap shrink-0 ${
+                activeOption === 'add'
+                  ? 'text-amber-300 underline decoration-amber-400 decoration-2 underline-offset-8 font-semibold'
+                  : ''
               }`}
             >
               Take Book Photos
@@ -885,9 +1068,9 @@ export default function App() {
             <button
               type="button"
               onClick={() => setActiveOption('my-orders')}
-              className={`transition-colors hover:text-stone-900 whitespace-nowrap shrink-0 ${
+              className={`transition-colors hover:text-amber-300 whitespace-nowrap shrink-0 ${
                 activeOption === 'my-orders'
-                  ? 'text-stone-900 underline underline-offset-8'
+                  ? 'text-amber-300 underline decoration-amber-400 decoration-2 underline-offset-8 font-semibold'
                   : ''
               }`}
             >
@@ -895,25 +1078,32 @@ export default function App() {
             </button>
             <button
               type="button"
+              onClick={() => setShowSplash(true)}
+              className="transition-colors hover:text-amber-300 whitespace-nowrap shrink-0 text-purple-200"
+            >
+              Starting Intro
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 setActiveOption('admin');
                 setAdminPasswordError(null);
               }}
-              className={`inline-flex items-center gap-1.5 font-semibold text-rose-900 transition-colors hover:text-rose-800 whitespace-nowrap shrink-0 ${
-                activeOption === 'admin' ? 'underline underline-offset-8' : ''
-              }`}
+              className="inline-flex items-center gap-1.5 font-semibold text-amber-300 transition-colors hover:text-amber-200 whitespace-nowrap shrink-0"
             >
               <Lock className="h-3.5 w-3.5" />
               Admin Panel {isAdminUnlocked ? `(${adminOrders.length})` : ''}
             </button>
           </nav>
         ) : (
-          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-stone-600">
+          <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-purple-100">
             <button
               type="button"
               onClick={() => setAuthMode('signup')}
-              className={`transition-colors hover:text-stone-900 whitespace-nowrap shrink-0 ${
-                authMode === 'signup' ? 'text-stone-900 underline underline-offset-8' : ''
+              className={`transition-colors hover:text-amber-300 whitespace-nowrap shrink-0 ${
+                authMode === 'signup'
+                  ? 'text-amber-300 underline decoration-amber-400 decoration-2 underline-offset-8 font-semibold'
+                  : ''
               }`}
             >
               Sign Up
@@ -921,34 +1111,59 @@ export default function App() {
             <button
               type="button"
               onClick={() => setAuthMode('login')}
-              className={`transition-colors hover:text-stone-900 whitespace-nowrap shrink-0 ${
-                authMode === 'login' ? 'text-stone-900 underline underline-offset-8' : ''
+              className={`transition-colors hover:text-amber-300 whitespace-nowrap shrink-0 ${
+                authMode === 'login'
+                  ? 'text-amber-300 underline decoration-amber-400 decoration-2 underline-offset-8 font-semibold'
+                  : ''
               }`}
             >
               Log In
             </button>
             <a
               href="#phone-otp-box"
-              className="transition-colors hover:text-stone-900 whitespace-nowrap shrink-0"
+              className="transition-colors hover:text-amber-300 whitespace-nowrap shrink-0"
             >
               Phone OTP
             </a>
-            <a
-              href="#three-side-guide"
-              className="transition-colors hover:text-stone-900 whitespace-nowrap shrink-0"
+            <button
+              type="button"
+              onClick={() => setShowSplash(true)}
+              className="transition-colors hover:text-amber-300 whitespace-nowrap shrink-0 text-purple-200"
             >
-              Archive Standard
-            </a>
+              Starting Intro
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveOption('admin');
+                setAdminPasswordError(null);
+              }}
+              className="inline-flex items-center gap-1.5 font-semibold text-amber-300 transition-colors hover:text-amber-200 whitespace-nowrap shrink-0"
+            >
+              <Lock className="h-3.5 w-3.5" />
+              Admin Panel
+            </button>
           </nav>
         )}
 
         {/* Zone 3: 1 primary action */}
-        <div className="flex items-center shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveOption('admin');
+              setAdminPasswordError(null);
+            }}
+            className="inline-flex md:hidden items-center gap-1.5 rounded-lg border border-amber-400/50 bg-purple-900/80 px-3 py-2 text-xs font-semibold text-amber-300 whitespace-nowrap shrink-0"
+          >
+            <Lock className="h-3.5 w-3.5" />
+            Admin Panel
+          </button>
           {user ? (
             <button
               type="button"
               onClick={handleSignOut}
-              className="inline-flex items-center gap-2 rounded-lg border border-stone-300 bg-white px-4 py-2 text-xs font-semibold text-stone-800 transition-colors hover:bg-stone-100 whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-2 rounded-lg bg-amber-400 px-4 py-2 text-xs font-bold text-[#2A083B] transition-colors hover:bg-amber-300 whitespace-nowrap shrink-0"
             >
               <LogOut className="h-3.5 w-3.5" />
               Sign Out
@@ -958,7 +1173,7 @@ export default function App() {
               type="button"
               onClick={handleGoogleAuth}
               disabled={isAuthenticating}
-              className="rounded-lg bg-rose-900 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-rose-800 disabled:opacity-50 whitespace-nowrap shrink-0"
+              className="rounded-lg bg-amber-400 px-4 py-2 text-xs font-bold text-[#2A083B] transition-colors hover:bg-amber-300 disabled:opacity-50 whitespace-nowrap shrink-0"
             >
               Continue with Google
             </button>
@@ -970,7 +1185,7 @@ export default function App() {
       <main id="top" className="mx-auto w-full max-w-7xl flex-1 px-6 py-10">
         {!isAuthReady ? (
           <div className="flex min-h-[50vh] items-center justify-center">
-            <p className="text-sm text-stone-500">Loading SARAS book archive...</p>
+            <p className="text-sm text-purple-800">Loading SARAS book archive...</p>
           </div>
         ) : !user ? (
           /* =========================================================
@@ -979,20 +1194,21 @@ export default function App() {
           <div className="space-y-16">
             <section className="grid grid-cols-1 gap-10 lg:grid-cols-12 lg:items-stretch">
               {/* Left Column: Editorial Showcase & 3-Side Book Visual */}
-              <div className="flex flex-col justify-between space-y-6 lg:col-span-7">
+              <div className="flex flex-col justify-between space-y-6 rounded-2xl bg-gradient-to-br from-[#2E0942] via-[#451261] to-[#240634] p-7 text-white shadow-xl lg:col-span-7">
                 <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-xs text-stone-500">
-                    <span>Old Book Preservation</span>
+                  <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-amber-300">
+                    <span>Buy • Sell • Share Books</span>
                     <span aria-hidden="true">·</span>
                     <span>3-Side Photographic Record</span>
                     <span aria-hidden="true">·</span>
-                    <span>Buy Now with Exact Location</span>
+                    <span>Exact Location Delivery</span>
                   </div>
-                  <h1 className="font-serif text-4xl font-semibold tracking-tight text-stone-900 sm:text-5xl">
-                    Photograph, catalog, and order old books from all three sides.
+                  <h1 className="font-serif text-4xl font-semibold tracking-tight text-white sm:text-5xl">
+                    Photograph, catalog, and order old books from all{' '}
+                    <span className="text-amber-400">three sides.</span>
                   </h1>
-                  <p className="max-w-2xl text-base leading-relaxed text-stone-600">
-                    SARAS lets readers and collectors preserve and purchase pre-loved books by
+                  <p className="max-w-2xl text-base leading-relaxed text-purple-100/90">
+                    SARAS lets readers and collectors buy, sell, and share pre-loved books by
                     photographing all 3 sides — Front Cover, Book Spine, and Back Cover — paired
                     with Book Name, Author Name, Phone OTP verification, and exact GPS delivery
                     location.
@@ -1000,32 +1216,32 @@ export default function App() {
                 </div>
 
                 {/* Hero Photography with Zero-Broken-Image Fallback */}
-                <div className="relative overflow-hidden rounded-xl border border-stone-200 bg-stone-100 lg:h-full">
+                <div className="relative overflow-hidden rounded-xl border-2 border-purple-400/30 bg-purple-950 lg:h-full">
                   {!heroImgBroken ? (
                     <img
                       src={heroBooksImg}
                       alt="Stack of antique cloth-bound and weathered leather books on an oak desk"
                       referrerPolicy="no-referrer"
                       onError={() => setHeroImgBroken(true)}
-                      className="h-full max-h-[460px] w-full object-cover"
+                      className="h-full max-h-[420px] w-full object-cover"
                     />
                   ) : (
-                    <div className="flex h-72 w-full flex-col items-center justify-center bg-stone-200/70 p-8 text-center">
-                      <BookOpen className="mb-3 h-10 w-10 text-stone-600" />
-                      <p className="font-serif text-lg font-medium text-stone-800">
+                    <div className="flex h-72 w-full flex-col items-center justify-center bg-purple-900/50 p-8 text-center">
+                      <BookOpen className="mb-3 h-10 w-10 text-amber-400" />
+                      <p className="font-serif text-lg font-medium text-white">
                         SARAS 3-Side Old Book Archive
                       </p>
-                      <p className="mt-1 text-xs text-stone-600">
+                      <p className="mt-1 text-xs text-amber-300">
                         Front Cover · Spine Binding · Back Cover
                       </p>
                     </div>
                   )}
-                  <div className="bg-gradient-to-t from-black/80 via-black/40 to-transparent absolute inset-x-0 bottom-0 p-6 text-white">
-                    <p className="font-serif text-lg font-medium">
+                  <div className="bg-gradient-to-t from-[#1A0426]/95 via-[#2A083B]/60 to-transparent absolute inset-x-0 bottom-0 p-6 text-white">
+                    <p className="font-serif text-lg font-medium text-amber-300">
                       Every book is archived with 3 angles, book name, author name, and Buy Now
                       delivery.
                     </p>
-                    <p className="mt-1 text-xs text-stone-200">
+                    <p className="mt-1 text-xs text-purple-100">
                       Sign up, verify your phone number via OTP, and start photographing or
                       ordering books.
                     </p>
@@ -1036,11 +1252,11 @@ export default function App() {
               {/* Right Column: Sign Up Page & Login Page + Phone OTP Card */}
               <div
                 id="auth-form"
-                className="flex flex-col justify-between rounded-xl border border-stone-200 bg-white p-8 shadow-xs lg:col-span-5"
+                className="flex flex-col justify-between rounded-2xl border-2 border-purple-200 bg-white p-8 shadow-lg lg:col-span-5"
               >
                 <div className="space-y-5">
                   {/* Interactive Segmented Switcher: Sign Up Page vs Login Page */}
-                  <div className="grid grid-cols-2 gap-1 rounded-lg bg-stone-100 p-1">
+                  <div className="grid grid-cols-2 gap-1 rounded-lg bg-purple-100/80 p-1">
                     <button
                       type="button"
                       onClick={() => {
@@ -1049,8 +1265,8 @@ export default function App() {
                       }}
                       className={`rounded-md py-2.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
                         authMode === 'signup'
-                          ? 'bg-white text-stone-900 shadow-xs'
-                          : 'text-stone-600 hover:text-stone-900'
+                          ? 'bg-[#3B0E54] text-amber-300 shadow-xs'
+                          : 'text-purple-900 hover:text-purple-950'
                       }`}
                     >
                       Sign Up Page
@@ -1063,8 +1279,8 @@ export default function App() {
                       }}
                       className={`rounded-md py-2.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
                         authMode === 'login'
-                          ? 'bg-white text-stone-900 shadow-xs'
-                          : 'text-stone-600 hover:text-stone-900'
+                          ? 'bg-[#3B0E54] text-amber-300 shadow-xs'
+                          : 'text-purple-900 hover:text-purple-950'
                       }`}
                     >
                       Login Page
@@ -1072,7 +1288,7 @@ export default function App() {
                   </div>
 
                   <div>
-                    <h2 className="font-serif text-2xl font-semibold text-stone-900">
+                    <h2 className="font-serif text-2xl font-semibold text-[#2A083B]">
                       {authMode === 'signup'
                         ? 'Create your SARAS account'
                         : 'Welcome back to SARAS'}
@@ -1248,16 +1464,16 @@ export default function App() {
              ========================================================= */
           <div className="space-y-10">
             {/* Welcome & Workspace Mode Switcher */}
-            <section className="flex flex-col gap-6 border-b border-stone-200 pb-8 lg:flex-row lg:items-end lg:justify-between">
+            <section className="flex flex-col gap-6 rounded-2xl border-2 border-purple-200/80 bg-gradient-to-r from-[#2E0942] via-[#461363] to-[#2E0942] p-6 sm:p-8 text-white shadow-lg lg:flex-row lg:items-end lg:justify-between">
               <div className="space-y-2">
-                <div className="flex flex-wrap items-center gap-2 text-xs text-stone-500">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-purple-200">
                   <span>
                     Signed in as {profileName || user.email || user.phoneNumber || 'Reader'}
                   </span>
                   <span aria-hidden="true">·</span>
                   <span>
                     {verifiedPhone ? (
-                      <span className="inline-flex items-center gap-1 font-medium text-emerald-800">
+                      <span className="inline-flex items-center gap-1 font-medium text-amber-300">
                         <ShieldCheck className="h-3.5 w-3.5" />
                         Phone Verified ({verifiedPhone})
                       </span>
@@ -1268,18 +1484,18 @@ export default function App() {
                   {isAdminUser && (
                     <>
                       <span aria-hidden="true">·</span>
-                      <span className="font-semibold text-rose-900">
+                      <span className="font-semibold text-amber-300">
                         Owner Admin ({BLUEPRINT_LIMITS.ADMIN_EMAIL})
                       </span>
                     </>
                   )}
                 </div>
-                <h1 className="font-serif text-3xl font-semibold text-stone-900 sm:text-4xl">
-                  SARAS Old Book Archive & Store
+                <h1 className="font-serif text-3xl font-semibold text-white sm:text-4xl">
+                  SAR<span className="text-amber-400">A</span>S Old Book Archive & Store
                 </h1>
-                <p className="max-w-2xl text-sm text-stone-600">
-                  Browse old books with 3-side photos and Buy Now delivery, or photograph your
-                  own book from all 3 sides.
+                <p className="max-w-2xl text-sm text-purple-100/90">
+                  Buy • Sell • Share Books — Browse old books with 3-side photos and Buy Now
+                  delivery, or photograph your own book from all 3 sides.
                 </p>
               </div>
 
@@ -1291,10 +1507,10 @@ export default function App() {
                     setActiveOption('browse');
                     setFormError(null);
                   }}
-                  className={`flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
+                  className={`flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
                     activeOption === 'browse'
-                      ? 'border-rose-900 bg-rose-900 text-white shadow-xs'
-                      : 'border-stone-300 bg-white text-stone-800 hover:border-stone-400'
+                      ? 'border-amber-400 bg-amber-400 text-[#2A083B] shadow-md'
+                      : 'border-purple-400/40 bg-purple-900/60 text-white hover:bg-purple-800/80'
                   }`}
                 >
                   <BookOpen className="h-4 w-4" />
@@ -1307,10 +1523,10 @@ export default function App() {
                     setActiveOption('add');
                     setFormSuccess(null);
                   }}
-                  className={`flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
+                  className={`flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
                     activeOption === 'add'
-                      ? 'border-rose-900 bg-rose-900 text-white shadow-xs'
-                      : 'border-stone-300 bg-white text-stone-800 hover:border-stone-400'
+                      ? 'border-amber-400 bg-amber-400 text-[#2A083B] shadow-md'
+                      : 'border-purple-400/40 bg-purple-900/60 text-white hover:bg-purple-800/80'
                   }`}
                 >
                   <Camera className="h-4 w-4" />
@@ -1320,10 +1536,10 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => setActiveOption('my-orders')}
-                  className={`flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
+                  className={`flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
                     activeOption === 'my-orders'
-                      ? 'border-stone-900 bg-stone-900 text-white shadow-xs'
-                      : 'border-stone-300 bg-white text-stone-800 hover:border-stone-400'
+                      ? 'border-amber-400 bg-amber-400 text-[#2A083B] shadow-md'
+                      : 'border-purple-400/40 bg-purple-900/60 text-white hover:bg-purple-800/80'
                   }`}
                 >
                   <Package className="h-4 w-4" />
@@ -1337,13 +1553,9 @@ export default function App() {
                     setActiveOption('admin');
                     setAdminPasswordError(null);
                   }}
-                  className={`flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-xs font-semibold transition-all whitespace-nowrap shrink-0 ${
-                    activeOption === 'admin'
-                      ? 'border-stone-900 bg-stone-900 text-white shadow-xs'
-                      : 'border-rose-900/40 bg-rose-50/70 text-rose-950 hover:bg-rose-100'
-                  }`}
+                  className="flex items-center justify-center gap-2 rounded-lg border border-amber-300/60 bg-amber-400/15 px-4 py-2.5 text-xs font-semibold text-amber-300 transition-all hover:bg-amber-400/25 whitespace-nowrap shrink-0"
                 >
-                  <Lock className="h-3.5 w-3.5 text-rose-900" />
+                  <Lock className="h-3.5 w-3.5 text-amber-300" />
                   Admin Panel {isAdminUnlocked ? `(${adminOrders.length})` : '(Password Protected)'}
                 </button>
               </div>
@@ -1374,92 +1586,7 @@ export default function App() {
               </div>
             )}
 
-            {activeOption === 'admin' ? (
-              isAdminUnlocked ? (
-                /* ---------------------------------------------------------
-                   UNLOCKED ADMIN PANEL (After entering secret password "hello")
-                   Shows which phone number sent which order & exact location/state for Shiprocket
-                   --------------------------------------------------------- */
-                <AdminOrdersPanel
-                  adminEmail={user.email || BLUEPRINT_LIMITS.ADMIN_EMAIL}
-                  orders={adminOrders}
-                  isLoading={isLoadingAdminOrders}
-                  onUpdateOrderStatus={handleAdminUpdateOrderStatus}
-                  onLockAdmin={() => {
-                    setIsAdminUnlocked(false);
-                    setAdminPasswordInput('');
-                    setAdminPasswordError(null);
-                  }}
-                />
-              ) : (
-                /* ---------------------------------------------------------
-                   LOCKED ADMIN PASSWORD GATE (Requires password "hello")
-                   --------------------------------------------------------- */
-                <section className="mx-auto max-w-md rounded-xl border border-stone-200 bg-white p-8 shadow-xs">
-                  <div className="flex flex-col items-center text-center">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-900">
-                      <KeyRound className="h-6 w-6" />
-                    </div>
-                    <h2 className="mt-4 font-serif text-2xl font-semibold text-stone-900">
-                      Admin Panel Locked
-                    </h2>
-                    <p className="mt-1.5 text-xs leading-relaxed text-stone-600">
-                      This Admin Panel is restricted to the owner. Enter the secret Admin
-                      Password to view customer phone numbers, exact locations, states, and
-                      Shiprocket delivery addresses.
-                    </p>
-                  </div>
-
-                  {adminPasswordError && (
-                    <div className="mt-5 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50/90 p-3.5 text-xs text-rose-900">
-                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-800" />
-                      <span>{adminPasswordError}</span>
-                    </div>
-                  )}
-
-                  <form onSubmit={handleAdminPasswordSubmit} className="mt-6 space-y-4">
-                    <div>
-                      <label
-                        htmlFor="admin-secret-password"
-                        className="block text-xs font-semibold text-stone-700"
-                      >
-                        Enter Admin Password
-                      </label>
-                      <input
-                        id="admin-secret-password"
-                        type="password"
-                        required
-                        autoFocus
-                        value={adminPasswordInput}
-                        onChange={(e) => {
-                          setAdminPasswordInput(e.target.value);
-                          setAdminPasswordError(null);
-                        }}
-                        placeholder="Enter secret password..."
-                        className="mt-1.5 w-full rounded-lg border border-stone-300 bg-[#FAF8F5] px-3.5 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 focus:border-rose-900 focus:bg-white focus:outline-none"
-                      />
-                    </div>
-
-                    <div className="flex items-center gap-2.5">
-                      <button
-                        type="button"
-                        onClick={() => setActiveOption('browse')}
-                        className="flex-1 rounded-lg border border-stone-300 bg-white px-4 py-2.5 text-xs font-semibold text-stone-700 transition-colors hover:bg-stone-50 whitespace-nowrap shrink-0"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={isUnlockingAdmin}
-                        className="flex-1 rounded-lg bg-rose-900 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-rose-800 disabled:opacity-50 whitespace-nowrap shrink-0"
-                      >
-                        {isUnlockingAdmin ? 'Verifying...' : 'Unlock Admin Panel'}
-                      </button>
-                    </div>
-                  </form>
-                </section>
-              )
-            ) : activeOption === 'my-orders' ? (
+            {activeOption === 'my-orders' ? (
               /* ---------------------------------------------------------
                  BUYER'S OWN PLACED ORDERS VIEW
                  --------------------------------------------------------- */
@@ -1560,14 +1687,14 @@ export default function App() {
                 {/* Filter & Search Toolbar */}
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   {/* Interactive Filter Tabs */}
-                  <div className="inline-flex items-center gap-1 rounded-lg bg-stone-200/70 p-1 self-start">
+                  <div className="inline-flex items-center gap-1 rounded-lg bg-purple-100/90 p-1 self-start border border-purple-200">
                     <button
                       type="button"
                       onClick={() => setCatalogScope('all')}
                       className={`rounded-md px-3.5 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
                         catalogScope === 'all'
-                          ? 'bg-white text-stone-900 shadow-xs'
-                          : 'text-stone-600 hover:text-stone-900'
+                          ? 'bg-[#380E4E] text-amber-300 shadow-xs'
+                          : 'text-purple-900 hover:text-purple-950'
                       }`}
                     >
                       All Added Books (Community)
@@ -1577,8 +1704,8 @@ export default function App() {
                       onClick={() => setCatalogScope('mine')}
                       className={`rounded-md px-3.5 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
                         catalogScope === 'mine'
-                          ? 'bg-white text-stone-900 shadow-xs'
-                          : 'text-stone-600 hover:text-stone-900'
+                          ? 'bg-[#380E4E] text-amber-300 shadow-xs'
+                          : 'text-purple-900 hover:text-purple-950'
                       }`}
                     >
                       Added by Me
@@ -1587,26 +1714,26 @@ export default function App() {
 
                   {/* Search Input */}
                   <div className="relative w-full sm:max-w-xs">
-                    <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-stone-400" />
+                    <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-purple-500" />
                     <input
                       type="search"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       placeholder="Search book name, author, or person..."
-                      className="w-full rounded-lg border border-stone-300 bg-white py-2 pr-3.5 pl-9 text-xs text-stone-900 placeholder:text-stone-400 focus:border-rose-900 focus:outline-none"
+                      className="w-full rounded-lg border-2 border-purple-200 bg-white py-2 pr-3.5 pl-9 text-xs text-stone-900 placeholder:text-stone-400 focus:border-[#4A1464] focus:outline-none"
                     />
                   </div>
                 </div>
 
                 {/* Catalog Grid or "No books :( !" Empty State */}
                 {isLoadingBooks ? (
-                  <div className="rounded-xl border border-stone-200 bg-white p-12 text-center">
-                    <p className="text-sm text-stone-500">Loading books from archive...</p>
+                  <div className="rounded-xl border-2 border-purple-200 bg-white p-12 text-center">
+                    <p className="text-sm text-purple-800">Loading books from archive...</p>
                   </div>
                 ) : filteredBooks.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center rounded-xl border border-stone-200 bg-white px-6 py-16 text-center">
-                    <BookOpen className="mb-4 h-12 w-12 text-stone-400" />
-                    <h2 className="font-serif text-3xl font-semibold text-stone-900">
+                  <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-purple-200 bg-gradient-to-br from-white via-purple-50/50 to-amber-50/40 px-6 py-16 text-center shadow-sm">
+                    <BookOpen className="mb-4 h-12 w-12 text-[#4A1464]" />
+                    <h2 className="font-serif text-3xl font-semibold text-[#2A083B]">
                       No books :(!
                     </h2>
                     <p className="mt-2 max-w-md text-sm text-stone-600">
@@ -1621,7 +1748,7 @@ export default function App() {
                           setActiveOption('add');
                           openCameraForSide('frontPhoto');
                         }}
-                        className="inline-flex items-center gap-2 rounded-lg bg-rose-900 px-5 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-rose-800 whitespace-nowrap shrink-0"
+                        className="inline-flex items-center gap-2 rounded-lg bg-[#380E4E] px-5 py-2.5 text-xs font-bold text-amber-300 shadow-sm transition-colors hover:bg-[#4C1469] whitespace-nowrap shrink-0"
                       >
                         <Camera className="h-4 w-4" />
                         Take Picture of Book (3 Sides)
@@ -1629,7 +1756,7 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => setActiveOption('add')}
-                        className="inline-flex items-center gap-2 rounded-lg border border-stone-300 bg-white px-4 py-2.5 text-xs font-semibold text-stone-800 transition-colors hover:bg-stone-50 whitespace-nowrap shrink-0"
+                        className="inline-flex items-center gap-2 rounded-lg border-2 border-purple-300 bg-white px-4 py-2.5 text-xs font-semibold text-[#380E4E] transition-colors hover:bg-purple-50 whitespace-nowrap shrink-0"
                       >
                         <Plus className="h-4 w-4" />
                         Add Book Details
@@ -1646,11 +1773,11 @@ export default function App() {
                       return (
                         <article
                           key={book.id}
-                          className="group flex flex-col justify-between overflow-hidden rounded-xl border border-stone-200 bg-white transition-transform duration-150 hover:-translate-y-0.5 hover:shadow-md"
+                          className="group flex flex-col justify-between overflow-hidden rounded-xl border-2 border-purple-200/80 bg-white shadow-xs transition-transform duration-150 hover:-translate-y-0.5 hover:border-purple-400 hover:shadow-md"
                         >
                           <div>
                             {/* Active Side Photo Display */}
-                            <div className="relative aspect-4/3 w-full overflow-hidden bg-stone-100">
+                            <div className="relative aspect-4/3 w-full overflow-hidden bg-purple-50">
                               <img
                                 src={book[activeSide]}
                                 alt={`${book.title} — ${activeSide}`}
@@ -1660,7 +1787,7 @@ export default function App() {
                               <button
                                 type="button"
                                 onClick={() => setInspectedBook(book)}
-                                className="absolute right-3 bottom-3 inline-flex items-center gap-1.5 rounded-lg bg-stone-950/80 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-xs transition-colors hover:bg-stone-900 whitespace-nowrap shrink-0"
+                                className="absolute right-3 bottom-3 inline-flex items-center gap-1.5 rounded-lg bg-[#2A083B]/90 px-3 py-1.5 text-xs font-semibold text-amber-300 backdrop-blur-xs transition-colors hover:bg-[#380E4E] whitespace-nowrap shrink-0"
                               >
                                 <Eye className="h-3.5 w-3.5" />
                                 Inspect 3 Sides
@@ -1668,7 +1795,7 @@ export default function App() {
                             </div>
 
                             {/* Interactive 3-Side Switcher Bar */}
-                            <div className="grid grid-cols-3 border-b border-stone-200 bg-[#FAF8F5] p-1.5 gap-1">
+                            <div className="grid grid-cols-3 border-b border-purple-100 bg-purple-50/70 p-1.5 gap-1">
                               {BOOK_SIDES.map((side) => {
                                 const isCurrent = activeSide === side.key;
                                 return (
@@ -1681,10 +1808,10 @@ export default function App() {
                                         [book.id]: side.key,
                                       }))
                                     }
-                                    className={`rounded py-1.5 text-[11px] font-medium transition-colors whitespace-nowrap shrink-0 ${
+                                    className={`rounded py-1.5 text-[11px] font-semibold transition-colors whitespace-nowrap shrink-0 ${
                                       isCurrent
-                                        ? 'bg-stone-900 text-white'
-                                        : 'text-stone-600 hover:bg-stone-200/70 hover:text-stone-900'
+                                        ? 'bg-[#380E4E] text-amber-300'
+                                        : 'text-purple-900 hover:bg-purple-200/60'
                                     }`}
                                   >
                                     {side.stepNumber}. {side.shortLabel}
@@ -1695,14 +1822,13 @@ export default function App() {
 
                             {/* Book Name, Author Name & Whoever Added Metadata */}
                             <div className="p-5 space-y-2">
-                              {/* Clean unboxed metadata with typographic separators (Zero-Pill Discipline) */}
-                              <div className="flex items-center gap-1.5 text-xs text-stone-500">
+                              <div className="flex items-center gap-1.5 text-xs text-purple-800/80">
                                 <span>Added by {book.ownerName}</span>
                                 <span aria-hidden="true">·</span>
                                 <span className="font-mono tabular-nums">3 Sides</span>
                               </div>
 
-                              <h3 className="font-serif text-lg font-semibold text-stone-900 line-clamp-1">
+                              <h3 className="font-serif text-lg font-semibold text-[#2A083B] line-clamp-1">
                                 {book.title}
                               </h3>
 
@@ -1719,11 +1845,11 @@ export default function App() {
                           </div>
 
                           {/* Card Footer Actions: Buy Now CTA + View All 3 Photos + Delete */}
-                          <div className="space-y-3 border-t border-stone-100 px-5 py-4">
+                          <div className="space-y-3 border-t border-purple-100 bg-purple-50/30 px-5 py-4">
                             <button
                               type="button"
                               onClick={() => setBuyNowBook(book)}
-                              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-rose-900 px-4 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-rose-800 whitespace-nowrap shrink-0"
+                              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[#380E4E] via-[#531675] to-[#380E4E] px-4 py-2.5 text-xs font-bold text-amber-300 shadow-xs transition-all hover:brightness-110 whitespace-nowrap shrink-0"
                             >
                               <ShoppingBag className="h-3.5 w-3.5" />
                               Buy Now
@@ -2036,10 +2162,12 @@ export default function App() {
         </section>
       </main>
 
-      {/* Quiet Editorial Footer */}
-      <footer className="mt-16 border-t border-stone-200 bg-white px-6 py-6 text-xs text-stone-500">
+      {/* Colorful SARAS Editorial Footer */}
+      <footer className="mt-16 border-t-2 border-amber-400/60 bg-gradient-to-r from-[#2A083B] via-[#3E1057] to-[#2A083B] px-6 py-6 text-xs text-purple-200">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 sm:flex-row">
-          <span>SARAS — Old Book 3-Side Archive & Catalog</span>
+          <span className="font-medium text-amber-300">
+            SARAS — Buy • Sell • Share Books (3-Side Archive & Catalog)
+          </span>
           <div className="flex items-center gap-2">
             <span>Front Cover</span>
             <span aria-hidden="true">·</span>
@@ -2068,7 +2196,7 @@ export default function App() {
         onBuyNow={(b) => setBuyNowBook(b)}
       />
 
-      {/* Buy Now Checkout Modal: Step 1 Exact Location -> Step 2 Phone -> Step 3 Shiprocket State & Address */}
+      {/* Buy Now Checkout Modal: Step 1 Exact Location -> Step 2 Phone & Real Mobile Call -> Step 3 Shiprocket State & Address */}
       <BuyNowModal
         book={buyNowBook}
         currentUser={user}
